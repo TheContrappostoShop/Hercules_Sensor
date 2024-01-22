@@ -1,0 +1,82 @@
+(kicad_sch (version 20230121) (generator eeschema)
+
+  (uuid f137e4cd-6eab-42ee-a6e0-578fea995183)
+
+  (paper "A4")
+
+  (lib_symbols
+  )
+
+
+  (sheet (at 15.24 17.78) (size 73.66 36.83) (fields_autoplaced)
+    (stroke (width 0.1524) (type solid))
+    (fill (color 0 0 0 0.0000))
+    (uuid 0d915788-e59a-41a6-a701-49ddece7bb46)
+    (property "Sheetname" "MCU" (at 15.24 17.0684 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "MCU.kicad_sch" (at 15.24 55.1946 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "Force sensor board"
+        (path "/f137e4cd-6eab-42ee-a6e0-578fea995183" (page "2"))
+      )
+    )
+  )
+
+  (sheet (at 101.6 71.12) (size 64.77 38.1) (fields_autoplaced)
+    (stroke (width 0.1524) (type solid))
+    (fill (color 0 0 0 0.0000))
+    (uuid 241b459e-da9d-495f-bc9f-221f4edb6a45)
+    (property "Sheetname" "OLED + ACC" (at 101.6 70.4084 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "OLED+ACC.kicad_sch" (at 101.6 109.8046 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "Force sensor board"
+        (path "/f137e4cd-6eab-42ee-a6e0-578fea995183" (page "5"))
+      )
+    )
+  )
+
+  (sheet (at 15.24 69.85) (size 72.39 38.1) (fields_autoplaced)
+    (stroke (width 0.1524) (type solid))
+    (fill (color 0 0 0 0.0000))
+    (uuid 71764e63-0511-4a08-b9c4-d1556f5d075a)
+    (property "Sheetname" "HX711" (at 15.24 69.1384 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "HX711.kicad_sch" (at 15.24 108.5346 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "Force sensor board"
+        (path "/f137e4cd-6eab-42ee-a6e0-578fea995183" (page "3"))
+      )
+    )
+  )
+
+  (sheet (at 101.6 19.05) (size 66.04 36.83) (fields_autoplaced)
+    (stroke (width 0.1524) (type solid))
+    (fill (color 0 0 0 0.0000))
+    (uuid 9c7a9ac9-2fbb-4216-998e-e4a21fbd8477)
+    (property "Sheetname" "LED" (at 101.6 18.3384 0)
+      (effects (font (size 1.27 1.27)) (justify left bottom))
+    )
+    (property "Sheetfile" "LED.kicad_sch" (at 101.6 56.4646 0)
+      (effects (font (size 1.27 1.27)) (justify left top))
+    )
+    (instances
+      (project "Force sensor board"
+        (path "/f137e4cd-6eab-42ee-a6e0-578fea995183" (page "4"))
+      )
+    )
+  )
+
+  (sheet_instances
+    (path "/" (page "1"))
+  )
+)
