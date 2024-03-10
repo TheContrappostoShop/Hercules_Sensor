@@ -9,38 +9,43 @@
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 
-// OLED display object initialization
-Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+// Pin definitions
+#define BUTTON_PIN 9
+#define LED_PIN 8
+#define LOADCELL_DOUT_PIN 14
+#define LOADCELL_SCK_PIN 13
 
-const int BUTTON_PIN = 9; // Define button pin
-
-// LED ring configuration
-const int LED_PIN = 8;
-const int LED_COUNT = 24;
+// LED configuration
+#define LED_COUNT 24
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
+// OLED display initialization
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// Load cell configuration
+HX711 scale;
+
+// Calibration factor (should be adjusted based on your scale)
+long calibration_factor = -1050;
+
+// Graph settings
+float graphValues[SCREEN_WIDTH] = {0};
+int graphIndex = 0;
+
+// Force thresholds
+float maxPositiveForce = 30.0;
+float maxNegativeForce = -30.0;
+
+// Flashing control
 unsigned long flashStartTime = 0;
 int flashCount = 0;
 bool flashing = false;
 
-// Load cell configuration
-const int LOADCELL_DOUT_PIN = 14;
-const int LOADCELL_SCK_PIN = 13;
-HX711 scale;
-
-// Force thresholds and graph settings
-float maxPositiveForce = 30.0;
-float maxNegativeForce = -30.0;
-float graphValues[SCREEN_WIDTH] = {0};  // Array to store the graph values
-int graphIndex = 0;  // Current x position in the graph
-long calibration_factor = -1050; // Adjust to your scale
-
-// Define start and end colors for positive and negative forces
-const uint32_t colorStartPositive = strip.Color(0, 20, 20); // Green for positive
-const uint32_t colorEndPositive = strip.Color(0, 20, 0);   // Red for maximum positive
-const uint32_t colorStartNegative = strip.Color(0, 0, 20); // Blue for negative
-const uint32_t colorEndNegative = strip.Color(20, 0, 0);   // Red for maximum negative
-
+// Color settings
+const uint32_t colorStartPositive = strip.Color(0, 20, 20);
+const uint32_t colorEndPositive = strip.Color(0, 20, 0);
+const uint32_t colorStartNegative = strip.Color(0, 0, 20);
+const uint32_t colorEndNegative = strip.Color(20, 0, 0);
 
 void handleButton() {
   static unsigned long pressTime = 0;
@@ -81,46 +86,39 @@ void resetGraphAndZeroWeight() {
 }
 
 void performCalibration() {
-  // Display calibration instructions
-  display.clearDisplay();
-  display.setCursor(0,0);
-  display.println("Calibration: Place 1000g");
-  display.println("Press button when ready.");
-  display.display();
+    display.clearDisplay();
+    display.setCursor(0,0);
+    display.println("Empty scale");
+    display.println("Press button");
+    display.display();
 
-  // Wait here until the button is pressed
-  bool waitForButton = true;
-  while(waitForButton) {
-    if(digitalRead(BUTTON_PIN) == HIGH) {  // Assuming button goes HIGH when pressed due to pull-down resistor
-      waitForButton = false; // Exit the loop
-      delay(500); // Debounce delay
-    }
-  }
+    // Wait for button press to confirm scale is empty
+    while(digitalRead(BUTTON_PIN) != HIGH);
+    delay(500); // Debounce delay
 
-  // Clear the screen before taking the measurement
-  display.clearDisplay();
-  display.setCursor(0,0);
-  display.println("Measuring...");
-  display.display();
+    scale.tare(); // Zero the scale
+    long offset = scale.get_offset();
 
-  // Now perform the calibration
-  scale.set_scale(); // Reset the scale factor
-  float reading = scale.get_units(10); // Take average reading
-  long newCalibrationFactor = (calibration_factor * 1000.0) / reading; // Calculate new calibration factor
+    display.clearDisplay();
+    display.setCursor(0,0);
+    display.println("Place 1000g");
+    display.println("Press button");
+    display.display();
 
-  // Update the global calibration factor
-  calibration_factor = newCalibrationFactor;
-  scale.set_scale(calibration_factor); // Apply new calibration factor
+    // Wait for button press to confirm weight is placed
+    while(digitalRead(BUTTON_PIN) != HIGH);
+    delay(500); // Debounce delay
 
-  // Save the new calibration factor somewhere if possible
-  // For now, you might manually update this in your code and re-upload
+    // Assuming you use a 1000g weight for calibration
+    scale.calibrate_scale(1000.0, 5); // Calibrate with the known weight
+    float calibrationFactor = scale.get_scale();
 
-  // Indicate completion
-  display.clearDisplay();
-  display.setCursor(0,0);
-  display.println("Calibration Complete!");
-  display.display();
-  delay(2000); // Show completion message for a bit before returning to main loop
+    display.clearDisplay();
+    display.setCursor(0,0);
+    display.println("Calibration");
+    display.println("Complete!");
+    display.display();
+    delay(2000); // Show completion message
 }
 
 void updateLEDs(float weight) {
@@ -257,24 +255,26 @@ void displayGraph(float weight) {
 }
 
 void setup() {
-
-  pinMode(BUTTON_PIN, INPUT); // Initialize button pin as input with internal pullup
-  // Serial and device initialization
+  pinMode(BUTTON_PIN, INPUT);
   Serial.begin(9600);
+  
+  // Initialize scale
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-  scale.set_scale(calibration_factor); 
+  scale.set_scale(calibration_factor);
   scale.tare();
+  
+  // Initialize LED strip
   strip.begin();
   strip.show();
   
-  // OLED display initialization
+  // Initialize OLED display
   if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
     Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed further, loop indefinitely
+    for(;;);
   }
-
   display.clearDisplay();
-  setupPeelingDetection();
+  
+  setupPeelingDetection(); // Setup peeling detection if necessary
 }
 
 void loop() {
@@ -297,7 +297,6 @@ void loop() {
         flashPeelDetected();  // Call the flash function
         peelDetectedFlag = false;  // Reset the flag
     }
- 
 
   // Print weight to the serial monitor
   Serial.print("Weight: ");
