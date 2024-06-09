@@ -4,7 +4,6 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include "PeelingDetection.h"
-#include <Arduino.h>
 
 // OLED display width and height
 #define SCREEN_WIDTH 128
@@ -23,18 +22,20 @@ Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 // OLED display initialization
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
-// Calibration factors for both channels
-float calibrationFactorA = 100; // Adjust this to your specific calibration factor
-float calibrationFactorB = 100; // Adjust this to your specific calibration factor
+// HX711 scale initialization
+HX711 scale;
 
-// Starting Force thresholds
+/////////////////////////////////////////////////////////
+///////////////// USER DEFINED VALUES ///////////////////
+////////////////////////////////////////////////////////
+
+// Calibration factors for both channels
+float calibrationFactorA = 500; // Adjust this to your specific calibration factor
+float calibrationFactorB = 500; // Adjust this to your specific calibration factor
+
+// Force thresholds
 float maxPositiveForce = 300.0;
 float maxNegativeForce = -300.0;
-
-// User-defined parameters
-const int sampleRate = 80; // Samples per second
-const int displayRefreshRate = 8; // Display refresh rate in Hz (also used for median smoothing)
-const int numLoadCells = 1; // Number of load cells (1 or 2)
 
 // Color settings
 const uint32_t colorStartPositive = strip.Color(0, 20, 20);
@@ -42,8 +43,20 @@ const uint32_t colorEndPositive = strip.Color(0, 20, 0);
 const uint32_t colorStartNegative = strip.Color(0, 0, 20);
 const uint32_t colorEndNegative = strip.Color(20, 0, 0);
 
-// Load cell configuration
-HX711 scale;
+// Global variables to store offsets
+long offsetA = 0;
+long offsetB = 0;
+
+// User-defined parameters
+const int sampleRate = 60; // Samples per second
+const int displayRefreshRate = 4; // Display refresh rate in Hz (also used for median smoothing)
+const int numLoadCells = 1; // Number of load cells (1 or 2)
+const int resolution = 20; // Scale resolution in grams
+const int smoothingEnabled = 0; // Toggle for smoothing function (1 = on, 0 = off)
+
+/////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////
 
 // Graph settings
 float graphValues[SCREEN_WIDTH] = {0};
@@ -54,15 +67,15 @@ unsigned long flashStartTime = 0;
 int flashCount = 0;
 bool flashing = false;
 
-// Global variables to store offsets
-long offsetA = 0;
-long offsetB = 0;
-
 // Variables for median smoothing
 const int sampleSize = sampleRate / displayRefreshRate;
 float samplesA[sampleSize];
 float samplesB[sampleSize];
 int sampleIndex = 0;
+
+// Function declarations
+void displayGraph(float weight);
+float median(float* arr, int size);
 
 void setup() {
   pinMode(BUTTON_PIN, INPUT);
@@ -70,6 +83,22 @@ void setup() {
 
   // Initialize scale
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+
+  // Automatically tare the load cells at startup
+  Serial.println("Taring the load cells...");
+  scale.set_gain(128); // Select channel A
+  scale.tare();
+  offsetA = scale.get_offset();
+  Serial.print("Offset A: ");
+  Serial.println(offsetA);
+
+  if (numLoadCells == 2) {
+    scale.set_gain(32); // Select channel B
+    scale.tare();
+    offsetB = scale.get_offset();
+    Serial.print("Offset B: ");
+    Serial.println(offsetB);
+  }
 
   // Initialize LED strip
   strip.begin();
@@ -117,7 +146,9 @@ void loop() {
     scale.set_scale(calibrationFactorA); // Apply calibration factor for channel A
     scale.set_offset(offsetA); // Apply offset for channel A
     weightA = scale.get_units(1); // Read weight from channel A
-    samplesA[sampleIndex] = weightA;
+    if (smoothingEnabled) {
+      samplesA[sampleIndex] = weightA;
+    }
   }
 
   if (numLoadCells == 2) {
@@ -125,18 +156,54 @@ void loop() {
     scale.set_scale(calibrationFactorB); // Apply calibration factor for channel B
     scale.set_offset(offsetB); // Apply offset for channel B
     weightB = scale.get_units(1); // Read weight from channel B
-    samplesB[sampleIndex] = weightB;
+    if (smoothingEnabled) {
+      samplesB[sampleIndex] = weightB;
+    }
   }
 
-  sampleIndex = (sampleIndex + 1) % sampleSize;
+  if (smoothingEnabled) {
+    sampleIndex = (sampleIndex + 1) % sampleSize;
 
-  if (sampleIndex == 0) {
-    // Calculate the median of the samples
-    float medianA = numLoadCells >= 1 ? median(samplesA, sampleSize) : 0;
-    float medianB = numLoadCells == 2 ? median(samplesB, sampleSize) : 0;
+    if (sampleIndex == 0) {
+      // Calculate the median of the samples
+      float medianA = numLoadCells >= 1 ? median(samplesA, sampleSize) : 0;
+      float medianB = numLoadCells == 2 ? median(samplesB, sampleSize) : 0;
 
-    // Calculate the average weight
-    float weight = (medianA + medianB) / numLoadCells;
+      // Calculate the average weight
+      float weight = (medianA + medianB) / numLoadCells;
+
+      // Apply resolution
+      weight = round(weight / resolution) * resolution;
+
+      // Update LEDs, detect peeling, and update the graph with the average weight
+      updateLEDs(weight);
+      detectPeel(weight);
+
+      // Update the graph with the new weight value
+      displayGraph(weight);
+
+      if (peelDetectedFlag) {
+        flashPeelDetected();
+        peelDetectedFlag = false;
+      }
+
+      // Print average weight to the serial monitor for debugging
+      Serial.print("Weight A: ");
+      Serial.print(weightA, 0); // Print without decimals
+      if (numLoadCells == 2) {
+        Serial.print(" g, Weight B: ");
+        Serial.print(weightB, 0); // Print without decimals
+      }
+      Serial.print(" g, Average Weight: ");
+      Serial.print(weight, 0); // Print without decimals
+      Serial.println(" g");
+    }
+  } else {
+    // Calculate the average weight without smoothing
+    float weight = (weightA + weightB) / numLoadCells;
+
+    // Apply resolution
+    weight = round(weight / resolution) * resolution;
 
     // Update LEDs, detect peeling, and update the graph with the average weight
     updateLEDs(weight);
@@ -287,45 +354,57 @@ void handleFlashing() {
 
 // Function to display the graph on the OLED
 void displayGraph(float weight) {
-  // Shift all graph values to the left
-  for (int i = 0; i < SCREEN_WIDTH - 1; i++) {
-    graphValues[i] = graphValues[i + 1];
-  }
+    // Shift all graph values to the left
+    for (int i = 0; i < SCREEN_WIDTH - 1; i++) {
+        graphValues[i] = graphValues[i + 1];
+    }
 
-  // Add the new weight value to the end of the array
-  graphValues[SCREEN_WIDTH - 1] = weight;
+    // Add the new weight value to the end of the array
+    graphValues[SCREEN_WIDTH - 1] = weight;
 
-  // Clear the display
-  display.clearDisplay();
+    // Clear the display
+    display.clearDisplay();
 
-  // Set the dynamic range of the graph
-  float graphUpperBound = maxPositiveForce;
-  float graphLowerBound = -graphUpperBound;
+    // Determine the dynamic range of the graph
+    float maxGraphValue = maxPositiveForce;
+    float minGraphValue = maxNegativeForce;
+    for (int i = 0; i < SCREEN_WIDTH; i++) {
+        if (graphValues[i] > maxGraphValue) {
+            maxGraphValue = graphValues[i];
+        }
+        if (graphValues[i] < minGraphValue) {
+            minGraphValue = graphValues[i];
+        }
+    }
 
-  // Draw the graph
-  for (int i = 0; i < SCREEN_WIDTH - 1; i++) {
-    int x1 = i;
-    int y1 = map(graphValues[i], graphLowerBound, graphUpperBound, SCREEN_HEIGHT, 0);
-    int x2 = i + 1;
-    int y2 = map(graphValues[i + 1], graphLowerBound, graphUpperBound, SCREEN_HEIGHT, 0);
-    display.drawLine(x1, y1, x2, y2, WHITE);
-  }
+    // Ensure the graph accommodates both positive and negative peaks
+    float graphUpperBound = max(maxGraphValue, -minGraphValue);
+    float graphLowerBound = -graphUpperBound;
 
-  // Display the current weight in the top left corner of the OLED
-  display.setTextSize(1);
-  display.setTextColor(WHITE);
-  display.setCursor(0, 0);
-  display.print(weight, 0);
-  display.print("g");
+    // Draw the graph
+    for (int i = 0; i < SCREEN_WIDTH - 1; i++) {
+        int x1 = i;
+        int y1 = map(graphValues[i], graphLowerBound, graphUpperBound, SCREEN_HEIGHT, 0);
+        int x2 = i + 1;
+        int y2 = map(graphValues[i + 1], graphLowerBound, graphUpperBound, SCREEN_HEIGHT, 0);
+        display.drawLine(x1, y1, x2, y2, WHITE);
+    }
 
-  // Display maxPositiveForce in the top right corner of the OLED
-  String maxForceStr = String(maxPositiveForce, 0) + "g";
-  int maxForceWidth = (maxForceStr.length() + 1) * 6; // Approx width of text
-  display.setCursor(SCREEN_WIDTH - maxForceWidth, 0); // Set cursor to top right corner
-  display.print(maxForceStr);
+    // Display the current weight in the top left corner of the OLED
+    display.setTextSize(1);
+    display.setTextColor(WHITE);
+    display.setCursor(0, 0);
+    display.print(weight, 0);
+    display.print("g");
 
-  // Update the display with everything we've drawn
-  display.display();
+    // Display maxPositiveForce in the top right corner of the OLED
+    String maxForceStr = String(maxPositiveForce, 0) + "g";
+    int maxForceWidth = (maxForceStr.length() + 1) * 6; // Approx width of text
+    display.setCursor(SCREEN_WIDTH - maxForceWidth, 0); // Set cursor to top right corner
+    display.print(maxForceStr);
+
+    // Update the display with everything we've drawn
+    display.display();
 }
 
 // Function to perform calibration for both channels with LED effects
